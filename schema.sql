@@ -1,10 +1,10 @@
 -- =================================================================================
 -- Enterprise Supply Chain DBMS Schema & Seeding Script
--- Database: TiDB Serverless / MySQL 8.0
+-- Database: MySQL (Local)
 -- =================================================================================
 
-CREATE DATABASE IF NOT EXISTS test;
-USE test;
+CREATE DATABASE IF NOT EXISTS logistics_db;
+USE logistics_db;
 
 -- =================================================================================
 -- 1. DROP EXISTING TABLES (Reverse Dependency Order)
