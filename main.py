@@ -5,19 +5,6 @@ from datetime import datetime
 
 def connect():
     try:
-        # 1. Connect without DB to create it if it doesn't exist
-        temp_conn = mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="Harsha@1410",
-            autocommit=True
-        )
-        temp_cursor = temp_conn.cursor()
-        temp_cursor.execute("CREATE DATABASE IF NOT EXISTS air_cargo")
-        temp_cursor.close()
-        temp_conn.close()
-
-        # 2. Connect directly to the database
         conn = mysql.connector.connect(
             host="localhost",
             user="root",
@@ -25,66 +12,7 @@ def connect():
             database="air_cargo",
             autocommit=False
         )
-        
-        # 3. Create Tables if they don't exist
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS Customer (
-                CustomerID VARCHAR(10) PRIMARY KEY,
-                Name VARCHAR(100) NOT NULL,
-                Email VARCHAR(100) UNIQUE NOT NULL,
-                Phone VARCHAR(10) UNIQUE NOT NULL,
-                Address VARCHAR(255) NOT NULL
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS Flight (
-                FlightID VARCHAR(10) PRIMARY KEY,
-                AirportLocation VARCHAR(100) NOT NULL,
-                Destination VARCHAR(100) NOT NULL,
-                Date DATE NOT NULL,
-                AvailableSpace FLOAT NOT NULL
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS Cargo (
-                CargoID VARCHAR(20) PRIMARY KEY,
-                Weight FLOAT NOT NULL,
-                CargoType VARCHAR(50) NOT NULL,
-                TrackingStatus VARCHAR(50) NOT NULL DEFAULT 'Booked',
-                LastUpdated DATETIME NOT NULL,
-                Location VARCHAR(100) NOT NULL
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS Booking (
-                BookingID VARCHAR(20) PRIMARY KEY,
-                CargoID VARCHAR(20) NOT NULL,
-                CustomerID VARCHAR(10) NOT NULL,
-                FlightID VARCHAR(10) NOT NULL,
-                BookingDate DATETIME NOT NULL,
-                BookingStatus VARCHAR(20) NOT NULL DEFAULT 'Confirmed',
-                FOREIGN KEY (CargoID) REFERENCES Cargo(CargoID) ON DELETE CASCADE,
-                FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID) ON DELETE CASCADE,
-                FOREIGN KEY (FlightID) REFERENCES Flight(FlightID) ON DELETE CASCADE
-            )
-        ''')
-        
-        # 4. Seed initial flights if the table is empty so booking works
-        cursor.execute("SELECT COUNT(*) FROM Flight")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("""
-                INSERT INTO Flight (FlightID, AirportLocation, Destination, Date, AvailableSpace) VALUES 
-                ('FL-101', 'New York (JFK)', 'London (LHR)', DATE_ADD(CURDATE(), INTERVAL 2 DAY), 5000.0),
-                ('FL-202', 'Singapore (SIN)', 'Frankfurt (FRA)', DATE_ADD(CURDATE(), INTERVAL 3 DAY), 10000.0),
-                ('FL-303', 'London (LHR)', 'Dubai (DXB)', DATE_ADD(CURDATE(), INTERVAL 5 DAY), 7500.0),
-                ('FL-404', 'Los Angeles (LAX)', 'Tokyo (NRT)', DATE_ADD(CURDATE(), INTERVAL 1 DAY), 2500.0),
-                ('FL-505', 'Frankfurt (FRA)', 'New York (JFK)', DATE_ADD(CURDATE(), INTERVAL 4 DAY), 8000.0)
-            """)
-            conn.commit()
-            
-        cursor.close()
-        print("Database connection and validation established successfully!")
+        print("Database connection established successfully")
         return conn
     except mysql.connector.Error as err:
         print(f"Database connection failed: {err}")
@@ -96,38 +24,28 @@ def register_customer(cursor, conn):
     print("\n===== Register New Customer =====")
     errors = []
     
-    customer_id = input("Enter Customer ID (upto 10 characters): ").strip()
+    customer_id = input("Enter Customer ID (upto 20 characters): ").strip()
     name = input("Enter Full Name: ").strip()
-    email = input("Enter Email (enter valid email format): ").strip()
+    email = input("Enter Email: ").strip()
     phone = input("Enter Phone (10 digits): ").strip()
     address = input("Enter Address: ").strip()
+    password = input("Create a Password: ").strip()
 
     if not customer_id:
         errors.append("Customer ID cannot be empty")
     else:
-        cursor.execute("SELECT CustomerID FROM Customer WHERE CustomerID = %s", (customer_id,))
+        cursor.execute("SELECT CustomerID FROM customer WHERE CustomerID = %s", (customer_id,))
         if cursor.fetchone():
             errors.append("Customer ID already exists")
 
-    if not name:
-        errors.append("Name cannot be empty")
-
-    if not email or '@' not in email or '.' not in email.split('@')[-1]:
+    if not email or '@' not in email:
         errors.append("Invalid email format")
-    else:
-        cursor.execute("SELECT CustomerID FROM Customer WHERE Email = %s", (email.lower(),))
-        if cursor.fetchone():
-            errors.append("Email address already registered")
 
     if not (phone.isdigit() and len(phone) == 10):
         errors.append("Phone must be exactly 10 digits")
-    else:
-        cursor.execute("SELECT CustomerID FROM Customer WHERE Phone = %s", (phone,))
-        if cursor.fetchone():
-            errors.append("Phone number already registered")
-
-    if not address:
-        errors.append("Address cannot be empty")
+        
+    if not password:
+        errors.append("Password cannot be empty")
 
     if errors:
         print("\nValidation Errors:")
@@ -138,30 +56,25 @@ def register_customer(cursor, conn):
 
     try:
         cursor.execute("""
-            INSERT INTO Customer (CustomerID, Name, Email, Phone, Address)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (customer_id, name, email, phone, address))
+            INSERT INTO customer (CustomerID, Name, Email, Phone, Address, PasswordHash)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (customer_id, name, email, phone, address, password))
         conn.commit()
-        print("\nAll data validated successfully!")
-        print("Transaction committed successfully!")
-        print(f"Customer '{name}' registered successfully!")
+        print("\nCustomer registered successfully!")
         return customer_id
     except mysql.connector.Error as err:
         print(f"\nDatabase Error: {err}")
         conn.rollback()
-        print("Transaction rolled back due to database error")
         return None
 
 def update_customer_address(cursor, conn):
     print("\n===== Update Customer Address =====")
-    
     customer_id = input("Enter your Customer ID: ").strip()
     if not customer_id:
-        print("Customer ID required")
         return
 
     try:
-        cursor.execute("SELECT Name FROM Customer WHERE CustomerID = %s", (customer_id,))
+        cursor.execute("SELECT Name FROM customer WHERE CustomerID = %s", (customer_id,))
         customer = cursor.fetchone()
         
         if not customer:
@@ -169,49 +82,33 @@ def update_customer_address(cursor, conn):
             return
             
         print(f"\nCurrent customer: {customer[0]}")
-        
         new_address = input("Enter new address: ").strip()
-        if not new_address:
-            print("Address cannot be empty")
-            return
 
-        cursor.execute("""
-            UPDATE Customer 
-            SET Address = %s 
-            WHERE CustomerID = %s
-        """, (new_address, customer_id))
-        
+        cursor.execute("UPDATE customer SET Address = %s WHERE CustomerID = %s", (new_address, customer_id))
         conn.commit()
         print("\nAddress updated successfully!")
-        
     except mysql.connector.Error as err:
         conn.rollback()
         print(f"\nFailed to update address: {err}")
-        print("Transaction rolled back")
 
 def delete_customer(cursor, conn):
     print("\n===== Delete Customer Account =====")
-    
     customer_id = input("Enter your Customer ID: ").strip()
     if not customer_id:
-        print("Customer ID required")
         return
 
     try:
-        cursor.execute("SELECT Name FROM Customer WHERE CustomerID = %s", (customer_id,))
+        cursor.execute("SELECT Name FROM customer WHERE CustomerID = %s", (customer_id,))
         customer = cursor.fetchone()
         
         if not customer:
             print("Customer not found")
             return
             
-        print(f"\nCustomer to delete: {customer[0]}")
-        
         cursor.execute("""
-            SELECT COUNT(*) 
-            FROM Booking 
-            WHERE CustomerID = %s 
-            AND BookingStatus = 'Confirmed'
+            SELECT COUNT(*) FROM booking b 
+            JOIN cargo c ON b.TrackingNumber = c.TrackingNumber 
+            WHERE b.CustomerID = %s AND c.CurrentStatus != 'Delivered'
         """, (customer_id,))
         active_bookings = cursor.fetchone()[0]
         
@@ -220,92 +117,21 @@ def delete_customer(cursor, conn):
             return
 
         confirm = input("\nAre you sure you want to delete this account? (yes/no): ").lower()
-        if confirm != 'yes':
-            print("Account deletion cancelled")
-            return
-
-        print("\nProcessing deletion...")
-        cursor.execute("DELETE FROM Customer WHERE CustomerID = %s", (customer_id,))
-        conn.commit()
-        print("\nCustomer account deleted successfully!")
-        
+        if confirm == 'yes':
+            cursor.execute("DELETE FROM customer WHERE CustomerID = %s", (customer_id,))
+            conn.commit()
+            print("\nCustomer account deleted successfully!")
     except mysql.connector.Error as err:
         conn.rollback()
         print(f"\nFailed to delete customer: {err}")
-        print("Transaction rolled back")
-
-def delete_booking(cursor, conn, customer_id):
-    print("\n===== Delete Booking =====")
-    
-    try:
-        cursor.execute("""
-            SELECT b.BookingID, b.CargoID, f.AirportLocation, f.Destination, f.Date
-            FROM Booking b
-            JOIN Flight f ON b.FlightID = f.FlightID
-            WHERE b.CustomerID = %s AND b.BookingStatus = 'Confirmed'
-        """, (customer_id,))
-        bookings = cursor.fetchall()
-        
-        if not bookings:
-            print("\nNo active bookings found")
-            return
-            
-        print("\nYour Active Bookings:")
-        for i, (booking_id, cargo_id, source, dest, date) in enumerate(bookings, 1):
-            print(f" {i}. Booking ID: {booking_id}")
-            print(f"    Cargo ID: {cargo_id}")
-            print(f"    Route: {source} -> {dest} on {date}")
-            print("    ------------------------")
-        
-        while True:
-            try:
-                choice = int(input("\nSelect booking to delete (number): ").strip())
-                if 1 <= choice <= len(bookings):
-                    booking_id, cargo_id, _, _, _ = bookings[choice-1]
-                    break
-                print("Invalid selection")
-            except ValueError:
-                print("Please enter a number")
-
-        confirm = input(f"\nAre you sure you want to delete booking {booking_id}? (yes/no): ").lower()
-        if confirm != 'yes':
-            print("Booking deletion cancelled")
-            return
-
-        cursor.execute("SELECT Weight FROM Cargo WHERE CargoID = %s", (cargo_id,))
-        weight = cursor.fetchone()[0]
-
-        print("\nProcessing deletion...")
-        
-        cursor.execute("SELECT FlightID FROM Booking WHERE BookingID = %s", (booking_id,))
-        flight_id = cursor.fetchone()[0]
-        
-        cursor.execute("DELETE FROM Booking WHERE BookingID = %s", (booking_id,))
-        cursor.execute("DELETE FROM Cargo WHERE CargoID = %s", (cargo_id,))
-        cursor.execute("""
-            UPDATE Flight 
-            SET AvailableSpace = AvailableSpace + %s 
-            WHERE FlightID = %s
-        """, (weight, flight_id))
-        
-        conn.commit()
-        print("\nBooking deleted successfully!")
-        print(f"Freed {weight}kg on flight {flight_id}")
-        
-    except mysql.connector.Error as err:
-        conn.rollback()
-        print(f"\nFailed to delete booking: {err}")
-        print("Transaction rolled back")
 
 def book_cargo(cursor, conn, customer_id):
     print("\n===== Book Cargo Shipment =====")
-    
     try:
         cursor.execute("""
-            SELECT f.FlightID, f.AirportLocation, f.Destination, f.Date, f.AvailableSpace
-            FROM Flight f
-            WHERE f.AvailableSpace > 0 AND f.Date >= CURDATE()
-            ORDER BY f.Date, f.AirportLocation
+            SELECT FlightID, OriginHub, DestinationHub, DepartureDate, AvailableCapacity
+            FROM flight WHERE AvailableCapacity > 0 AND DepartureDate >= CURDATE()
+            ORDER BY DepartureDate, OriginHub
         """)
         flights = cursor.fetchall()
         
@@ -315,201 +141,133 @@ def book_cargo(cursor, conn, customer_id):
         
         print("\nAvailable Flights:")
         for i, (fid, source, dest, date, space) in enumerate(flights, start=1):
-            print(f" {i}. {source} -> {dest} | {date} | Space: {space}kg")
+            print(f" {i}. {source} -> {dest} | {date} | Capacity: {space}kg")
+
+        choice = input("\nSelect flight (number) or type 0 to cancel: ").strip()
+        if not choice.isdigit() or int(choice) < 1 or int(choice) > len(flights):
+            return
         
-        print(f" {len(flights)+1}. Cancel booking")
+        flight_id, source, dest, date, space = flights[int(choice)-1]
 
-        while True:
-            choice = input("\nSelect flight (number): ").strip()
-            try:
-                choice = int(choice)
-                if choice == len(flights)+1:
-                    return
-                if 1 <= choice <= len(flights):
-                    flight_id, source, dest, date, space = flights[choice-1]
-                    break
-                print("Invalid selection")
-            except ValueError:
-                print("Please enter a number")
+        tracking_number = input("\nEnter new Tracking Number: ").strip()
+        weight = float(input("Enter weight (kg): "))
+        cargo_type = input("Enter cargo type: ").strip()
+        
+        if weight > space:
+            print(f"Only {space}kg available on this flight.")
+            return
 
-        while True:
-            cargo_id = input("\nEnter Cargo ID: ").strip()
-            if not cargo_id:
-                print("Cargo ID required")
-                continue
-                
-            cursor.execute("SELECT CargoID FROM Cargo WHERE CargoID = %s", (cargo_id,))
-            if cursor.fetchone():
-                print("Cargo ID already exists")
-                continue
-            break
+        total_cost = weight * 5.0 # Basic cost calculation
+        
+        # Generate BookingID
+        cursor.execute("SELECT COUNT(*) FROM booking")
+        count = cursor.fetchone()[0]
+        booking_id = f"BKG{count+1:03}"
 
-        while True:
-            try:
-                weight = float(input("Enter weight (kg): "))
-                if weight <= 0:
-                    print("Weight must be positive")
-                    continue
-                if weight > space:
-                    print(f"Only {space}kg available")
-                    continue
-                break
-            except ValueError:
-                print("Enter a valid number")
+        print("\nProcessing transaction...")
+        cursor.execute("""
+            INSERT INTO cargo (TrackingNumber, Weight, CargoType, TotalCost, CurrentStatus, CurrentLocation)
+            VALUES (%s, %s, %s, %s, 'Booked', %s)
+        """, (tracking_number, weight, cargo_type, total_cost, source))
 
-        while True:
-            cargo_type = input("Enter cargo type: ").strip()
-            if not cargo_type:
-                print("Cargo type required")
-                continue
-            break
+        cursor.execute("""
+            INSERT INTO booking (BookingID, TrackingNumber, CustomerID, FlightID, BookingDate)
+            VALUES (%s, %s, %s, %s, NOW())
+        """, (booking_id, tracking_number, customer_id, flight_id))
 
-        cursor.execute("SELECT MAX(BookingID) FROM Booking")
-        last_id = cursor.fetchone()[0]
-        booking_id = f"BKG{int(last_id[3:])+1:03}" if last_id else "BKG001"
+        cursor.execute("""
+            UPDATE flight SET AvailableCapacity = AvailableCapacity - %s WHERE FlightID = %s
+        """, (weight, flight_id))
 
-        try:
-            print("\nProcessing transaction...")
-            cursor.execute("""
-                INSERT INTO Cargo (CargoID, Weight, CargoType, TrackingStatus, LastUpdated, Location)
-                VALUES (%s, %s, %s, 'Booked', NOW(), %s)
-            """, (cargo_id, weight, cargo_type, source))
+        cursor.execute("""
+            INSERT INTO trackinghistory (TrackingNumber, Status, Location, Remarks)
+            VALUES (%s, 'Booked', %s, 'Cargo booked and awaiting flight')
+        """, (tracking_number, source))
 
-            cursor.execute("""
-                INSERT INTO Booking (BookingID, CargoID, CustomerID, FlightID, BookingDate, BookingStatus)
-                VALUES (%s, %s, %s, %s, NOW(), 'Confirmed')
-            """, (booking_id, cargo_id, customer_id, flight_id))
+        conn.commit()
+        print("\nBooking Successful!")
+        print(f"Booking ID: {booking_id}")
+        print(f"Tracking Number: {tracking_number} (Cost: ${total_cost})")
 
-            cursor.execute("""
-                UPDATE Flight SET AvailableSpace = AvailableSpace - %s
-                WHERE FlightID = %s
-            """, (weight, flight_id))
-
-            conn.commit()
-            print("\nTransaction committed successfully!")
-            print("\nBooking Successful!")
-            print(f"Booking ID: {booking_id}")
-            print(f"Flight: {source} -> {dest} on {date}")
-            print(f"Cargo: {cargo_id} ({weight}kg of {cargo_type})")
-
-        except mysql.connector.Error as err:
-            conn.rollback()
-            print(f"\nTransaction failed: {err}")
-            print("Transaction rolled back due to errors")
-
-    except Exception as e:
-        print(f"\nSystem Error: {e}")
+    except mysql.connector.Error as err:
         conn.rollback()
-        print("Transaction rolled back due to system error")
+        print(f"\nTransaction failed: {err}")
 
 # ====================== EMPLOYEE FUNCTIONS ======================
 
 def update_cargo_status(cursor, conn):
     print("\n===== Update Cargo Status =====")
-    
-    while True:
-        cargo_id = input("Enter Cargo ID: ").strip()
-        if not cargo_id:
-            print("Cargo ID required")
-            continue
-        break
+    tracking_number = input("Enter Tracking Number: ").strip()
 
     try:
         cursor.execute("""
-            SELECT c.TrackingStatus, c.Weight, b.FlightID, f.Destination, b.BookingID
-            FROM Cargo c
-            JOIN Booking b ON c.CargoID = b.CargoID
-            JOIN Flight f ON b.FlightID = f.FlightID
-            WHERE c.CargoID = %s
-        """, (cargo_id,))
+            SELECT CurrentStatus, Weight, b.FlightID, f.DestinationHub
+            FROM cargo c
+            JOIN booking b ON c.TrackingNumber = b.TrackingNumber
+            JOIN flight f ON b.FlightID = f.FlightID
+            WHERE c.TrackingNumber = %s
+        """, (tracking_number,))
         result = cursor.fetchone()
 
         if not result:
             print("Cargo not found")
             return
 
-        status, weight, flight_id, destination, booking_id = result
+        status, weight, flight_id, destination = result
 
         if status == 'Delivered':
-            print("Cargo already delivered")
+            print("Cargo is already delivered")
             return
 
-        confirm = input(f"Mark {cargo_id} as delivered to {destination}? (yes/no): ").lower()
+        confirm = input(f"Mark {tracking_number} as delivered to {destination}? (yes/no): ").lower()
         if confirm != 'yes':
-            print("Update cancelled")
             return
 
-        print("\nProcessing transaction...")
-        
-        # Update cargo status
         cursor.execute("""
-            UPDATE Cargo 
-            SET TrackingStatus = 'Delivered', 
-                LastUpdated = NOW(), 
-                Location = %s
-            WHERE CargoID = %s
-        """, (destination, cargo_id))
+            UPDATE cargo SET CurrentStatus = 'Delivered', CurrentLocation = %s WHERE TrackingNumber = %s
+        """, (destination, tracking_number))
 
-        # Update flight space
         cursor.execute("""
-            UPDATE Flight 
-            SET AvailableSpace = AvailableSpace + %s 
-            WHERE FlightID = %s
+            UPDATE flight SET AvailableCapacity = AvailableCapacity + %s WHERE FlightID = %s
         """, (weight, flight_id))
 
-        # Delete the booking record
-        cursor.execute("DELETE FROM Booking WHERE BookingID = %s", (booking_id,))
+        cursor.execute("""
+            INSERT INTO trackinghistory (TrackingNumber, Status, Location, Remarks)
+            VALUES (%s, 'Delivered', %s, 'Package delivered successfully')
+        """, (tracking_number, destination))
 
         conn.commit()
-        print("\nTransaction committed successfully!")
-        print(f"\n{cargo_id} marked as delivered")
-        print(f"Restored {weight}kg to flight {flight_id}")
-        print(f"Booking {booking_id} automatically deleted")
+        print("\nCargo marked as delivered successfully!")
 
     except mysql.connector.Error as err:
         conn.rollback()
-        print(f"\nTransaction failed: {err}")
-        print("Transaction rolled back due to errors")
+        print(f"\nUpdate failed: {err}")
 
 def track_cargo(cursor):
     print("\n===== Track Cargo Status =====")
-    
-    cargo_id = input("Enter Cargo ID: ").strip()
-    if not cargo_id:
-        print("Cargo ID required")
-        return
+    tracking_number = input("Enter Tracking Number: ").strip()
 
     try:
         cursor.execute("""
-            SELECT TrackingStatus, Location, LastUpdated
-            FROM Cargo WHERE CargoID = %s
-        """, (cargo_id,))
+            SELECT CurrentStatus, CurrentLocation FROM cargo WHERE TrackingNumber = %s
+        """, (tracking_number,))
         cargo = cursor.fetchone()
 
         if not cargo:
             print("Cargo not found")
             return
 
-        status, location, updated = cargo
+        print(f"\nStatus: {cargo[0]}")
+        print(f"Location: {cargo[1]}")
 
+        print("\nTracking History:")
         cursor.execute("""
-            SELECT f.FlightID, f.AirportLocation, f.Destination, f.Date
-            FROM Booking b
-            JOIN Flight f ON b.FlightID = f.FlightID
-            WHERE b.CargoID = %s
-        """, (cargo_id,))
-        flight = cursor.fetchone()
-
-        print("\nCargo Details:")
-        print(f"Status: {status}")
-        print(f"Location: {location}")
-        print(f"Last Updated: {updated}")
-
-        if flight:
-            print("\nFlight Details:")
-            print(f"Flight ID: {flight[0]}")
-            print(f"Route: {flight[1]} -> {flight[2]}")
-            print(f"Date: {flight[3]}")
+            SELECT Timestamp, Status, Location, Remarks 
+            FROM trackinghistory WHERE TrackingNumber = %s ORDER BY Timestamp DESC
+        """, (tracking_number,))
+        
+        for row in cursor.fetchall():
+            print(f"[{row[0]}] {row[1]} at {row[2]} - {row[3]}")
 
     except mysql.connector.Error as err:
         print(f"\nTracking failed: {err}")
@@ -517,95 +275,58 @@ def track_cargo(cursor):
 def check_flights(cursor):
     print("\n===== Check Flights Availability =====")
     
-    source = input("From (leave blank for all): ").strip()
-    destination = input("To (leave blank for all): ").strip()
-    date = input("Date (YYYY-MM-DD, leave blank for all): ").strip()
+    cursor.execute("""
+        SELECT FlightID, OriginHub, DestinationHub, DepartureDate, AvailableCapacity 
+        FROM flight WHERE DepartureDate >= CURDATE() ORDER BY DepartureDate
+    """)
+    flights = cursor.fetchall()
 
-    query = """
-        SELECT FlightID, AirportLocation, Destination, Date, AvailableSpace 
-        FROM Flight 
-        WHERE AvailableSpace > 0 AND Date >= CURDATE()
-    """
-    params = []
+    if not flights:
+        print("\nNo flights found")
+        return
 
-    if source:
-        query += " AND LOWER(AirportLocation) = LOWER(%s)"
-        params.append(source)
-    if destination:
-        query += " AND LOWER(Destination) = LOWER(%s)"
-        params.append(destination)
-    if date:
-        query += " AND Date = %s"
-        params.append(date)
-
-    query += " ORDER BY Date, AirportLocation"
-
-    try:
-        cursor.execute(query, tuple(params))
-        flights = cursor.fetchall()
-
-        if not flights:
-            print("\nNo flights found")
-            return
-
-        print("\nAvailable Flights:")
-        for flight in flights:
-            print(f"{flight[0]}: {flight[1]} -> {flight[2]} | {flight[3]} | Space: {flight[4]}kg")
-
-    except mysql.connector.Error as err:
-        print(f"\nSearch failed: {err}")
+    print("\nAvailable Flights:")
+    for flight in flights:
+        print(f"{flight[0]}: {flight[1]} -> {flight[2]} | Date: {flight[3]} | Capacity: {flight[4]}kg")
 
 # ====================== MENUS ======================
 
 def customer_menu(cursor, conn):
-    customer_id = None
-    
     while True:
         print("\n===== Customer Menu =====")
-        print("1. Existing Customer Login")
-        print("2. New Customer Registration")
+        print("1. Login")
+        print("2. Register")
         print("3. Back")
         
         choice = input("Select option: ").strip()
         
         if choice == "1":
-            customer_id = input("Enter your Customer ID: ").strip()
-            if not customer_id:
-                print("Customer ID required")
-                continue
-                
-            cursor.execute("SELECT Name FROM Customer WHERE CustomerID = %s", (customer_id,))
+            customer_id = input("Enter Customer ID: ").strip()
+            password = input("Enter Password: ").strip()
+            
+            cursor.execute("SELECT Name FROM customer WHERE CustomerID = %s AND PasswordHash = %s", (customer_id, password))
             customer = cursor.fetchone()
             
-            if not customer:
-                print("Customer not found")
-                continue
+            if customer:
+                print(f"\nWelcome back, {customer[0]}!")
+                logged_in_menu(cursor, conn, customer_id)
+            else:
+                print("\nInvalid ID or Password.")
                 
-            print(f"\nWelcome back, {customer[0]}!")
-            logged_in_menu(cursor, conn, customer_id)
-            customer_id = None
-            
         elif choice == "2":
             customer_id = register_customer(cursor, conn)
             if customer_id:
                 logged_in_menu(cursor, conn, customer_id)
-                customer_id = None
-                
         elif choice == "3":
             break
-            
-        else:
-            print("Invalid option")
 
 def logged_in_menu(cursor, conn, customer_id):
     while True:
-        print("\n===== Customer Dashboard =====")
-        print(f"Logged in as: {customer_id}")
+        print(f"\n--- Customer Dashboard ({customer_id}) ---")
         print("1. Book Cargo")
         print("2. Update Address")
-        print("3. Delete Booking")
-        print("4. Delete Account")
-        print("5. Logout")
+        print("3. Delete Account")
+        print("4. Logout")
         
         choice = input("Select option: ").strip()
         
@@ -614,15 +335,11 @@ def logged_in_menu(cursor, conn, customer_id):
         elif choice == "2":
             update_customer_address(cursor, conn)
         elif choice == "3":
-            delete_booking(cursor, conn, customer_id)
-        elif choice == "4":
             delete_customer(cursor, conn)
             break
-        elif choice == "5":
-            print("\nLogged out successfully!")
+        elif choice == "4":
+            print("\nLogged out.")
             break
-        else:
-            print("Invalid option")
 
 def employee_menu(cursor, conn):
     while True:
@@ -642,8 +359,6 @@ def employee_menu(cursor, conn):
             check_flights(cursor)
         elif choice == "4":
             break
-        else:
-            print("Invalid option")
 
 # ====================== MAIN ======================
 
@@ -670,13 +385,10 @@ def main():
             elif role == "3":
                 print("\nThank you for using our services!")
                 break
-            else:
-                print("Invalid option")
                 
     except Exception as e:
         print(f"\nSystem error: {e}")
         conn.rollback()
-        print("Transaction rolled back due to system error")
     finally:
         cursor.close()
         conn.close()
