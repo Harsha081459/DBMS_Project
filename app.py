@@ -83,6 +83,29 @@ def get_shipment_details(tracking_id: str, user: dict = Depends(verify_jwt_token
         cursor.close()
         conn.close()
 
+@app.get("/flights")
+def get_available_flights(user: dict = Depends(verify_jwt_token)):
+    """
+    GET /flights to retrieve available flight schedules and capacities.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+    
+    try:
+        query = """
+            SELECT FlightID, OriginHub, DestinationHub, DepartureDate, AvailableCapacity
+            FROM flight
+            WHERE AvailableCapacity > 0
+            ORDER BY DepartureDate ASC
+        """
+        cursor.execute(query)
+        result = cursor.fetchall()
+        
+        return {"data": result}
+    finally:
+        cursor.close()
+        conn.close()
+
 @app.post("/cargo", status_code=201)
 def create_cargo(cargo: CargoCreate, user: dict = Depends(verify_jwt_token)):
     """
